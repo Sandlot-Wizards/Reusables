@@ -7,7 +7,7 @@ on:
         description: ".NET SDK version"
         required: false
         type: string
-        default: "9.0.x"
+        default: '9.0.x'
 
 permissions:
   contents: read
