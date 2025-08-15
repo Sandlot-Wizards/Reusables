@@ -1,4 +1,4 @@
-name: Reusable – Dev Branch Docker Build (secure, publish-before-docker)
+name: Reusable – Development Build
 
 on:
   workflow_call:
