@@ -7,7 +7,7 @@ on:
         description: ".NET SDK version"
         required: false
         type: string
-        default: "9.0.x"
+        default: '9.0.x'
     secrets:
       NUGET_PACKAGES_AUTH_TOKEN:
         required: true
@@ -229,7 +229,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: ${{ dotnet_version }}
           cache: true
           cache-dependency-path: |
             **/packages.lock.json
