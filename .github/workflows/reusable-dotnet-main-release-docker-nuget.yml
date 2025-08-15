@@ -1,4 +1,4 @@
-name: Reusable – Main Branch Release Pipeline (.NET + Docker, secure NuGet config)
+name: Reusable – Main Release
 
 on:
   workflow_call:
