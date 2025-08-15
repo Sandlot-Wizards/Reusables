@@ -1,4 +1,4 @@
-name: Reusable – Development Deploy
+name: Reusable – Development Build
 
 on:
   workflow_call:
