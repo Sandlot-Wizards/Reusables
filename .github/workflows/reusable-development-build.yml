@@ -137,5 +137,14 @@ jobs:
           set -euo pipefail
           cd src
           docker compose -f docker-compose-cicd.yml build ${{ steps.container_name.outputs.lowercase }}
-          docker push ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:dev
 
+          # B: After build, list actual local images tagged
+          echo "---- Debug B: local images ----"
+          docker images --format '{{.Repository}}:{{.Tag}}' | sort | grep -E '(^|/)mike\.(web|worker):dev$' || true
+
+          # C: Before push, show the exact push target
+          echo "---- Debug C: push target ----"
+          echo "${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:dev"
+
+          # Push
+          docker push ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:dev
