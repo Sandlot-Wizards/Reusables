@@ -131,20 +131,11 @@ jobs:
       - name: Tag substitution
         run: |
           sed -i 's/xxVERSIONxx/:dev/g' src/docker-compose-cicd.yml
-
-      - name: Show images after substitution
-        run: |
-          cd src
-          docker compose -f docker-compose-cicd.yml config | awk '/services:/,0' | grep -n 'image:'
-
+          
       - name: Build & push dev image (runtime-only Dockerfiles)
         run: |
           set -euo pipefail
           cd src
           docker compose -f docker-compose-cicd.yml build ${{ steps.container_name.outputs.lowercase }}
-          echo "---- Debug B: local images ----"
-          docker images --format '{{.Repository}}:{{.Tag}}' | sort | grep -E 'mike\.(web|worker):dev|.*/mike\.(web|worker):dev' || true
-          echo "---- Debug C: push target ----"
-          echo "${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:dev"
           docker push ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:dev
 
