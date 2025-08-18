@@ -106,14 +106,15 @@ jobs:
             **/*.csproj
 
       - name: Configure credentials for GitHub Packages source
-        shell: bash
         env:
           NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           dotnet nuget update source "${{ needs.init_workflow.outputs.ghpk_key }}" \
             --username "$GITHUB_ACTOR" \
-            --password "$NUGET_TOKEN"
+            --password "$NUGET_TOKEN" \
+            --store-password-in-clear-text \
+            --configfile "nuget.config"
 
       - name: Publish container apps (Release)
         shell: bash
