@@ -230,7 +230,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ dotnet_version }}
+          dotnet-version: ${{ inputs.dotnet_version }}
           cache: true
           cache-dependency-path: |
             **/packages.lock.json
