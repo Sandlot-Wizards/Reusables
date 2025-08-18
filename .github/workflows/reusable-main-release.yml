@@ -264,6 +264,4 @@ jobs:
         run: dotnet pack ${{ matrix.nuget_package }}.csproj --configuration Release --no-build --output "$GITHUB_WORKSPACE/artifacts/${{ matrix.nuget_package }}" -p:PackageVersion=${{ needs.init_workflow.outputs.version_no_v }}
 
       - name: Push package
-        run: dotnet nuget push "$GITHUB_WORKSPACE/artifacts/${{ matrix.nuget_package }}/${{ matrix.nuget_package }}.${{ needs.init_workflow.outputs.version_no_v }}.nupkg" \
-            --api-key ${{ secrets.NUGET_PACKAGES_AUTH_TOKEN }} \
-            --source "${{ vars.NUGET_PKG_INDEX }}"
+        run: dotnet nuget push "$GITHUB_WORKSPACE/artifacts/${{ matrix.nuget_package }}/${{ matrix.nuget_package }}.${{ needs.init_workflow.outputs.version_no_v }}.nupkg" --api-key ${{ secrets.NUGET_PACKAGES_AUTH_TOKEN }} --source "${{ vars.NUGET_PKG_INDEX }}"
