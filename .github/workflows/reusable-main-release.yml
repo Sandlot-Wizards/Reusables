@@ -23,6 +23,7 @@ concurrency:
 jobs:
   init_workflow:
     runs-on: ubuntu-24.04
+    if: ${{ !contains(toJson(needs.init_workflow.outputs.containers), '[]') }}
     timeout-minutes: 5
     outputs:
       nuget_packages: ${{ steps.nuget_matrix.outputs.matrix }}
