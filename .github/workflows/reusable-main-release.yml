@@ -1,4 +1,4 @@
-name: Reusable – Main Release
+name: Reusable – Main Release (BuildKit)
 
 on:
   workflow_call:
@@ -13,8 +13,8 @@ on:
         required: true
 
 permissions:
-  contents: read
-  packages: write
+  contents: write   # tag/release
+  packages: write   # GHCR + GitHub Packages (NuGet)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-reusable
@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      nuget_packages: ${{ steps.nuget_matrix.outputs.matrix }}
       containers: ${{ steps.container_matrix.outputs.matrix }}
+      nuget_packages: ${{ steps.nuget_matrix.outputs.matrix }}
       repo_owner_lower: ${{ steps.split.outputs._0 }}
       repo_name: ${{ steps.split.outputs._1 }}
       version: ${{ steps.semver.outputs.next }}
@@ -37,11 +37,11 @@ jobs:
 
       - id: container_matrix
         name: Load container matrix
-        run: 'echo "matrix={\"container\": $(jq -c . ./src/strategy_matrix_containers.json)}" >> "$GITHUB_OUTPUT"'
+        run: 'echo "matrix={""container"": $(jq -c . ./src/strategy_matrix_containers.json)}" >> "$GITHUB_OUTPUT"'
 
       - id: nuget_matrix
         name: Load NuGet package matrix
-        run: 'echo "matrix={\"nuget_package\": $(jq -c . ./src/strategy_matrix_nuget_packages.json)}" >> "$GITHUB_OUTPUT"'
+        run: 'echo "matrix={""nuget_package"": $(jq -c . ./src/strategy_matrix_nuget_packages.json)}" >> "$GITHUB_OUTPUT"'
 
       - id: owner_repo
         uses: ASzc/change-string-case-action@v5
@@ -75,7 +75,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y xmlstarlet   # previously installed in multiple jobs:contentReference[oaicite:2]{index=2}
+          sudo apt-get update && sudo apt-get install -y xmlstarlet
           KEY=$(xmlstarlet sel -t -m '//packageSources/add[contains(@value,"nuget.pkg.github.com")]' -v @key -n nuget.config | head -n1)
           if [[ -z "$KEY" ]]; then
             echo "::error::No GitHub Packages source found in nuget.config"
@@ -88,54 +88,10 @@ jobs:
           OWNER="${{ github.repository_owner }}"
           sed -i "s|__REPO_OWNER__|$OWNER|g" nuget.config
 
-  build_publish:
-    needs: init_workflow
-    if: ${{ !contains(toJson(needs.init_workflow.outputs.containers), '[]') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ inputs.dotnet_version }}
-          cache: true
-          cache-dependency-path: |
-            **/packages.lock.json
-            **/*.csproj
-
-      - name: Configure credentials for GitHub Packages source
-        env:
-          NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          dotnet nuget update source "${{ needs.init_workflow.outputs.ghpk_key }}" \
-            --username "$GITHUB_ACTOR" \
-            --password "$NUGET_TOKEN" \
-            --store-password-in-clear-text \
-            --configfile "nuget.config"
-
-      - name: Publish container apps (Release)
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t APPS < <(jq -r '.[]' ./src/strategy_matrix_containers.json)
-          for app in "${APPS[@]}"; do
-            proj="src/${app}/${app}.csproj"
-            out="src/${app}/publish"
-            echo "Publishing $proj → $out"
-            dotnet restore "$proj"
-            dotnet publish "$proj" -c Release -o "$out" --no-restore
-          done
-
   release:
     name: "release (${{ needs.init_workflow.outputs.version }})"
     runs-on: ubuntu-24.04
-    needs: [init_workflow, build_publish]
-    permissions:
-      contents: write
+    needs: [init_workflow]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -166,65 +122,61 @@ jobs:
   docker:
     if: ${{ !contains(toJson(needs.init_workflow.outputs.containers), '[]') }}
     runs-on: ubuntu-24.04
-    needs: [init_workflow, build_publish, release]
+    needs: [init_workflow, release]
     timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix: ${{ fromJson(needs.init_workflow.outputs.containers) }}
-    permissions:
-      contents: read
-      packages: write
     env:
-      DOCKER_REGISTRY: "${{ vars.DOCKER_IMAGE_PKGS }}/${{ needs.init_workflow.outputs.repo_owner_lower }}/"
-      base_image: "${{ vars.DOCKER_IMAGE_PKGS }}/${{ needs.init_workflow.outputs.repo_owner_lower }}/"
+      REGISTRY: ${{ vars.DOCKER_IMAGE_PKGS }}   # e.g., ghcr.io
+      OWNER: ${{ needs.init_workflow.outputs.repo_owner_lower }}
+      IMAGE_NAME: ${{ matrix.container }}
+      VERSION: ${{ needs.init_workflow.outputs.version }}
     steps:
-      - id: container_name
-        uses: ASzc/change-string-case-action@v5
-        with:
-          string: ${{ matrix.container }}
-
       - uses: actions/checkout@v4
         with:
           ref: main
 
+      - id: project_name
+        uses: ASzc/change-string-case-action@v5
+        with:
+          string: ${{ env.IMAGE_NAME }}
+
+      - name: Set up Docker Buildx (BuildKit)
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to container registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.DOCKER_IMAGE_PKGS }}
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Replace image tag in compose
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd src
-          sed -i "s/xxVERSIONxx/:${{ needs.init_workflow.outputs.version }}/g" docker-compose-cicd.yml   # replaces rpl usage:contentReference[oaicite:4]{index=4}
-
-      - name: Build & push runtime-only image
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd src
-          docker compose -f docker-compose-cicd.yml build ${{ steps.container_name.outputs.lowercase }}
-          docker compose -f docker-compose-cicd.yml push  ${{ steps.container_name.outputs.lowercase }}
-          docker tag  ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}:${{ needs.init_workflow.outputs.version }} \
-                      ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}
-          docker push ${{ env.base_image }}${{ steps.container_name.outputs.lowercase }}
+      - name: Build & push (full Dockerfile, BuildKit secrets)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./src/${{ env.IMAGE_NAME }}/Dockerfile
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ steps.project_name.outputs.lowercase }}:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ steps.project_name.outputs.lowercase }}
+          build-args: |
+            REPO_OWNER=${{ env.OWNER }}
+          secrets: |
+            NUGET_GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
   nuget:
     if: ${{ !contains(toJson(needs.init_workflow.outputs.nuget_packages), '[]') }}
     name: "nuget ${{ matrix.nuget_package }}:(${{ needs.init_workflow.outputs.version }})"
-    needs: [init_workflow, build_publish, release]
+    needs: [init_workflow, release]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.init_workflow.outputs.nuget_packages) }}
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
